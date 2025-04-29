@@ -3,6 +3,24 @@ from utils.openai_api import generate_report
 from string import Template
 import os
 
+# --- Simple login ---
+PASSWORD = st.secrets.get("APP_PASSWORD", "changeme")  # default fallback
+
+def check_password():
+    st.title("🔒 Leadership Report Generator Login")
+    password = st.text_input("Enter the password:", type="password")
+    if password == PASSWORD:
+        return True
+    elif password:
+        st.error("Incorrect password. Please try again.")
+        return False
+    else:
+        return False
+
+if not check_password():
+    st.stop()
+
+
 # --- Page setup ---
 st.set_page_config(page_title="Leadership Report Generator", layout="centered")
 st.title("🧠 Leadership Consulting Report Generator")
