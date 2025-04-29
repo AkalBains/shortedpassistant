@@ -3,6 +3,9 @@ from utils.openai_api import generate_report
 from string import Template
 import os
 
+# ✅ Must be first Streamlit call
+st.set_page_config(page_title="Leadership Report Generator", layout="centered")
+
 # --- Simple password protection ---
 PASSWORD = st.secrets.get("APP_PASSWORD", "changeme")  # fallback
 
@@ -21,7 +24,6 @@ if not check_password():
     st.stop()
 
 # --- Main app content after successful login ---
-st.set_page_config(page_title="Leadership Report Generator", layout="centered")
 st.title("🧠 Leadership Consulting Report Generator")
 st.markdown("Enter the consultant notes and ratings below to generate a full report.")
 
@@ -79,3 +81,4 @@ if st.button("Generate Full Report"):
 
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
+
