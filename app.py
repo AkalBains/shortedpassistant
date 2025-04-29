@@ -3,8 +3,8 @@ from utils.openai_api import generate_report
 from string import Template
 import os
 
-# --- Simple login ---
-PASSWORD = st.secrets.get("APP_PASSWORD", "changeme")  # default fallback
+# --- Simple password protection ---
+PASSWORD = st.secrets.get("APP_PASSWORD", "changeme")  # fallback
 
 def check_password():
     st.title("🔒 Leadership Report Generator Login")
@@ -20,8 +20,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-
-# --- Page setup ---
+# --- Main app content after successful login ---
 st.set_page_config(page_title="Leadership Report Generator", layout="centered")
 st.title("🧠 Leadership Consulting Report Generator")
 st.markdown("Enter the consultant notes and ratings below to generate a full report.")
