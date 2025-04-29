@@ -1,32 +1,64 @@
 import streamlit as st
 from utils.openai_api import generate_report
 from string import Template
+import os
 
-st.title("Leadership Consulting Report Generator")
+# --- Page setup ---
+st.set_page_config(page_title="Leadership Report Generator", layout="centered")
+st.title("🧠 Leadership Consulting Report Generator")
+st.markdown("Enter the consultant notes and ratings below to generate a full report.")
 
-# Consultant notes
-notes = st.text_area("Consultant Notes")
+# --- Consultant Notes Input ---
+st.header("1. Consultant Notes")
+notes = st.text_area(
+    label="Paste the consultant notes here:",
+    placeholder="Include sections like Personal Profile, Strengths, Development Areas, Future Considerations",
+    height=300
+)
 
-# Example rating inputs
+# --- Ratings Input ---
+st.header("2. Ratings")
+st.markdown("Optional: Use sliders to provide ratings.")
+
 ratings = {
-    "Leadership": st.slider("Leadership Rating", 1, 5, 3),
-    "Communication": st.slider("Communication Rating", 1, 5, 3),
-    "Strategic Thinking": st.slider("Strategic Thinking Rating", 1, 5, 3)
+    "Leadership": st.slider("Leadership", 1, 5, 3),
+    "Communication": st.slider("Communication", 1, 5, 3),
+    "Strategic Thinking": st.slider("Strategic Thinking", 1, 5, 3),
+    "Emotional Intelligence": st.slider("Emotional Intelligence", 1, 5, 3),
 }
 
-# Upload template (or load from file)
-template_str = open("report_template.txt").read()
-template = Template(template_str)
+# --- Load Report Template ---
+try:
+    with open("report_template.txt", "r") as file:
+        template_str = file.read()
+        template = Template(template_str)
+except FileNotFoundError:
+    st.error("❌ Could not find report_template.txt. Please add it to the root of the project.")
+    st.stop()
 
-if st.button("Generate Report"):
-    with st.spinner("Generating report..."):
-        ai_report = generate_report(notes)
-        final_report = template.substitute(
-            notes=notes,
-            ai_report=ai_report,
-            leadership=ratings["Leadership"],
-            communication=ratings["Communication"],
-            strategic=ratings["Strategic Thinking"]
-        )
-        st.text_area("Final Report", final_report, height=400)
-        st.download_button("Download Report", final_report, file_name="report.txt")
+# --- Generate Report Button ---
+st.header("3. Generate Report")
+if st.button("Generate Full Report"):
+    if not notes.strip():
+        st.warning("Please enter consultant notes before generating the report.")
+    else:
+        with st.spinner("Generating report with GPT-4o..."):
+            try:
+                ai_report = generate_report(notes)
+
+                # Merge ratings and AI report into template
+                final_report = template.substitute(
+                    notes=notes,
+                    ai_report=ai_report,
+                    leadership=ratings["Leadership"],
+                    communication=ratings["Communication"],
+                    strategic=ratings["Strategic Thinking"],
+                    emotional=ratings["Emotional Intelligence"]
+                )
+
+                st.success("✅ Report generated successfully!")
+                st.text_area("📄 Final Report", final_report, height=500)
+                st.download_button("📥 Download Report", final_report, file_name="consulting_report.txt")
+
+            except Exception as e:
+                st.error(f"An error occurred: {str(e)}")
