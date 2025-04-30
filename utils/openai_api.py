@@ -1,12 +1,13 @@
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def generate_report(notes):
-    if not openai.api_key:
+    if not client.api_key:
         raise ValueError("OpenAI API key not found. Please check your .env file or Streamlit secrets.")
 
     instructions = """
@@ -46,7 +47,7 @@ Your tone should mirror the four example reports ('report 1' to 'report 4'): pro
 Build each section thoughtfully and use clear, structured prose.
 """
 
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": instructions},
@@ -54,3 +55,4 @@ Build each section thoughtfully and use clear, structured prose.
         ]
     )
     return response.choices[0].message.content.strip()
+
