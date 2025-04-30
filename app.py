@@ -2,6 +2,7 @@ import streamlit as st
 from utils.openai_api import generate_report
 from utils.ppt_builder import build_report_pptx
 from utils.trait_scores import calculate_report_scores
+from utils.radar_charts import generate_radar_chart
 import tempfile
 
 # --- Streamlit config and authentication ---
@@ -97,6 +98,10 @@ if st.button("Generate Full PowerPoint Report"):
                 # ✅ Calculate scores from ratings
                 bar_scores, radar_data = calculate_report_scores(personal_ratings, capability_ratings)
 
+                # ✅ Generate radar charts
+                radar_chart_1 = generate_radar_chart(radar_data["Personal Characteristics"], "Personal Characteristics")
+                radar_chart_2 = generate_radar_chart(radar_data["Leadership Capabilities"], "Leadership Capabilities")
+
                 # === Generate PowerPoint ===
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
                     ppt_path = tmp.name
@@ -109,7 +114,9 @@ if st.button("Generate Full PowerPoint Report"):
                     personal_profile=personal_profile,
                     strengths=strengths,
                     development_areas=development_areas,
-                    future_considerations=future_considerations
+                    future_considerations=future_considerations,
+                    radar_chart_1_path=radar_chart_1,
+                    radar_chart_2_path=radar_chart_2
                 )
 
                 with open(ppt_path, "rb") as f:
