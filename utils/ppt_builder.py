@@ -12,7 +12,8 @@ def build_report_pptx(
     development_areas,
     future_considerations,
     radar_chart_1_path=None,
-    radar_chart_2_path=None
+    radar_chart_2_path=None,
+    bar_scores=None
 ):
     prs = Presentation(template_path)
 
@@ -52,6 +53,22 @@ def build_report_pptx(
                     shape.text = development_areas.pop(0)["paragraph"]
             elif "Insert Future Considerations here" in text:
                 shape.text = future_considerations
+
+    # === Page 5: Adjust bar widths ===
+    if bar_scores:
+        slide5 = prs.slides[4]
+        max_width = Inches(5.5)  # Full width for a score of 5
+
+        for trait, score in bar_scores.items():
+            for shape in slide5.shapes:
+                if shape.has_text_frame and trait.lower() in shape.text.strip().lower():
+                    # Find the nearest non-text shape (the bar) beneath the text box
+                    label_top = shape.top
+                    label_left = shape.left
+                    for bar in slide5.shapes:
+                        if not bar.has_text_frame and abs(bar.left - label_left) < Inches(0.1) and bar.top > label_top:
+                            bar.width = max_width * (score / 5)
+                            break  # Stop after first match
 
     # === Page 6: Insert radar charts ===
     slide6 = prs.slides[5]
