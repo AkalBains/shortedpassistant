@@ -1,137 +1,175 @@
+from __future__ import annotations
+
+"""
+Streamlit front‑end for the Leadership Report Generator
+-------------------------------------------------------
+Collects all user inputs, calls GPT to expand the consultant’s notes,
+calculates ratings → charts, sends everything to ppt_builder, and finally
+streams the finished PowerPoint back to the browser.
+
+Assumes you have these local modules in the same repo:
+• openai_api.py – generate_report(raw_notes:str) -> str (JSON string)
+• trait_scores.py – aggregate_eight_scores(), build_summary_ratings()
+• radar_charts.py – build_radar_charts(detailed_ratings:dict) -> (Path, Path)
+• ppt_builder.py – build_report_pptx(**kwargs)  (see docs in that module)
+
+Environment variables needed in Streamlit Cloud:
+• OPENAI_API_KEY  –  your OpenAI key
+
+Save this file at repo root and push to GitHub.  Streamlit Cloud
+will auto‑deploy.
+"""
+
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import streamlit as st
-from utils.openai_api import generate_report
-from utils.ppt_builder import build_report_pptx
-from utils.trait_scores import calculate_report_scores
-from utils.radar_charts import generate_radar_chart
-import tempfile
 
-# --- Streamlit config and authentication ---
-st.set_page_config(page_title="Leadership Report Generator", layout="centered")
-PASSWORD = st.secrets.get("APP_PASSWORD", "changeme")
+from openai_api import generate_report
+from trait_scores import aggregate_eight_scores
+from radar_charts import build_radar_charts
+from ppt_builder import build_report_pptx
 
-def check_password():
-    st.title("🔐 Leadership Report Generator Login")
-    password = st.text_input("Enter the password:", type="password")
-    if password == PASSWORD:
-        return True
-    elif password:
-        st.error("Incorrect password. Please try again.")
-        return False
-    return False
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+ROOT = Path(__file__).parent
+TEMPLATE_PATH = ROOT / "templates" / "Executive_Report_template_v2.pptx"
 
-if not check_password():
-    st.stop()
+# Keep the template in memory – avoids reading from disk for every session
+@st.cache_resource(show_spinner=False)
+def _load_template_bytes() -> bytes:
+    return TEMPLATE_PATH.read_bytes()
 
-# --- Page content ---
-st.title(":brain: Leadership Consulting Report Generator")
-st.markdown("Fill in the candidate's details, consultant notes, and ratings below.")
-
-# === Candidate Info ===
-st.header("1. Candidate Information")
-candidate_name = st.text_input("Candidate Name")
-role_and_company = st.text_input("Role and Company")
-
-# === Consultant Notes ===
-st.header("2. Consultant Notes")
-notes = st.text_area("Paste consultant notes here (profile, strengths, development, future considerations):", height=300)
-
-# === Ratings Dropdowns ===
-st.header("3. Ratings")
-rating_scale = ["Below", "Developing", "Hits", "Good", "Strong"]
-rating_map = {"Below": 1, "Developing": 2, "Hits": 3, "Good": 4, "Strong": 5}
-
-st.subheader("A. Personal Characteristics")
-personal_traits = [
-    "Mission", "Drive", "Agency",
-    "Judgment", "Incisiveness", "Curiosity",
-    "Positivity", "Resilience", "Growth Mindset",
-    "Compelling Impact", "Connection", "Environmental Insight"
+# ---------------------------------------------------------------------------
+# Streamlit UI helpers
+# ---------------------------------------------------------------------------
+TRAIT_24 = [
+    "mission", "drive", "agency",
+    "judgment", "incisiveness", "curiosity",
+    "positivity", "resilience", "growth mindset",
+    "compelling impact", "connection", "environmental insight",
+    "achieves sustainable impact", "creates focus", "orchestrates delivery",
+    "frames complexity", "identifies new possibilities", "generates solutions",
+    "inspires people", "drives culture", "grows self and others",
+    "aligns stakeholders", "models collaboration", "builds teams",
 ]
-personal_ratings = {trait: st.selectbox(trait, rating_scale, key=f"personal_{trait}") for trait in personal_traits}
 
-st.subheader("B. Leadership Capabilities")
-capability_traits = [
-    "Achieves Sustainable Impact", "Creates Focus", "Orchestrates Delivery",
-    "Frames Complexity", "Identifies New Possibilities", "Generates Solutions",
-    "Inspires People", "Drives Culture", "Grows Self and Others",
-    "Aligns Stakeholders", "Models Collaboration", "Builds Teams"
-]
-capability_ratings = {trait: st.selectbox(trait, rating_scale, key=f"cap_{trait}") for trait in capability_traits}
+REASONING_LABELS = ["verbal", "numerical", "abstract", "overall"]
 
-# === Summary Ratings (green balls) ===
-st.subheader("C. Summary Judgments")
-overall_categories = ["Fit for Role", "Capabilities", "Potential", "Future Considerations"]
-overall_ratings = {cat: st.selectbox(cat, rating_scale, key=f"overall_{cat}") for cat in overall_categories}
+# Nice‑looking slider labels
+def _slider(label: str, *, key: str, min_value: int = 1, max_value: int = 5, value: int = 3):
+    return st.slider(label.title(), min_value=min_value, max_value=max_value, value=value, key=key)
 
-# === Reasoning Scores ===
-st.subheader("D. Reasoning Scores (1–99%)")
-verbal_score = st.number_input("Verbal", min_value=1, max_value=99, value=70)
-numerical_score = st.number_input("Numerical", min_value=1, max_value=99, value=70)
-abstract_score = st.number_input("Abstract", min_value=1, max_value=99, value=70)
-overall_reasoning = st.number_input("Overall", min_value=1, max_value=99, value=70)
+# ---------------------------------------------------------------------------
+# Main app
+# ---------------------------------------------------------------------------
 
-# === Generate Report ===
-st.header("4. Generate Report")
-if st.button("Generate Full PowerPoint Report"):
-    if not notes.strip() or not candidate_name or not role_and_company:
-        st.warning("Please complete candidate info and notes before generating the report.")
-    else:
-        with st.spinner("Generating report with GPT-4o and formatting your PowerPoint..."):
-            try:
-                # === Call GPT-4o ===
-                ai_report = generate_report(notes)
+def main() -> None:
+    st.set_page_config(page_title="Leadership Report Generator", layout="wide")
+    st.title("📝 Leadership Report Generator")
+    st.write("Fill in the form, click *Generate Report*, and download a fully‑formatted PowerPoint.")
 
-                # TEMPORARY placeholders (to be extracted from ai_report)
-                personal_profile = "This is a sample personal profile."
-                strengths = [
-                    {"title": "Strategic Vision", "paragraph": "Can define and drive strategy."},
-                    {"title": "Empathy", "paragraph": "Connects well with others."},
-                    {"title": "Decisiveness", "paragraph": "Makes quick, confident choices."},
-                ]
-                development_areas = [
-                    {"title": "Delegation", "paragraph": "Could improve task sharing."},
-                    {"title": "Adaptability", "paragraph": "Needs to adjust to change more fluidly."},
-                    {"title": "Data Fluency", "paragraph": "More confidence using data needed."},
-                ]
-                future_considerations = "Aims to become Regional Director with strong potential."
+    with st.form("report_form", clear_on_submit=False):
+        st.header("Candidate Basics")
+        candidate_name = st.text_input("Candidate Name", max_chars=80)
+        role_and_company = st.text_input("Role & Company", max_chars=120)
 
-                # ✅ Calculate scores from ratings
-                bar_scores, radar_data = calculate_report_scores(personal_ratings, capability_ratings)
+        st.header("Consultant's Raw Notes")
+        raw_notes = st.text_area("Paste or type your assessment notes here", height=200)
 
-                # ✅ Generate radar charts
-                radar_chart_1 = generate_radar_chart(radar_data["Personal Characteristics"], "Personal Characteristics")
-                radar_chart_2 = generate_radar_chart(radar_data["Leadership Capabilities"], "Leadership Capabilities")
+        st.header("Quadrant Ratings (1 = Developing \u2192 5 = Strong)")
+        cols1 = st.columns(4)
+        fit_for_role      = cols1[0].slider("Fit for Role", 1, 5, 3)
+        capabilities      = cols1[1].slider("Capabilities", 1, 5, 3)
+        potential         = cols1[2].slider("Potential", 1, 5, 3)
+        future_consider   = cols1[3].slider("Future Considerations", 1, 5, 3)
 
-                # ✅ Reasoning score dictionary
-                reasoning_scores = {
-                    "Verbal": verbal_score,
-                    "Numerical": numerical_score,
-                    "Abstract": abstract_score,
-                    "Overall": overall_reasoning
-                }
+        st.header("24 Trait Ratings (1 = Developing \u2192 5 = Strong)")
+        detailed_ratings = {}
+        for i in range(0, 24, 4):
+            cols = st.columns(4)
+            for j, trait in enumerate(TRAIT_24[i:i+4]):
+                key = f"trait_{trait.replace(' ', '_')}"
+                detailed_ratings[trait] = cols[j].slider(trait.title(), 1, 5, 3, key=key)
 
-                # === Generate PowerPoint ===
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
-                    ppt_path = tmp.name
+        st.header("Reasoning Scores (percentile 1 ‒ 99)")
+        cols2 = st.columns(4)
+        reasoning_scores = {
+            "verbal":   cols2[0].number_input("Verbal",   1, 99, 50, key="verbal"),
+            "numerical":cols2[1].number_input("Numerical",1, 99, 50, key="numerical"),
+            "abstract": cols2[2].number_input("Abstract", 1, 99, 50, key="abstract"),
+            "overall":  cols2[3].number_input("Overall",  1, 99, 50, key="overall"),
+        }
 
-                build_report_pptx(
-                    template_path="templates/Template of Report.pptx",
-                    output_path=ppt_path,
-                    candidate_name=candidate_name,
-                    role_and_company=role_and_company,
-                    personal_profile=personal_profile,
-                    strengths=strengths,
-                    development_areas=development_areas,
-                    future_considerations=future_considerations,
-                    radar_chart_1_path=radar_chart_1,
-                    radar_chart_2_path=radar_chart_2,
-                    bar_scores=bar_scores,
-                    reasoning_scores=reasoning_scores  # ✅ NEW: pass reasoning scores to page 7
-                )
+        submitted = st.form_submit_button("🚀 Generate Report")
 
-                with open(ppt_path, "rb") as f:
-                    st.success("✅ Report generated successfully!")
-                    st.download_button("📅 Download PowerPoint", f, file_name="Leadership_Report.pptx")
+    if not submitted:
+        st.stop()
 
-            except Exception as e:
-                st.error(f"An error occurred: {str(e)}")
+    # ------------------------------------------------------------------
+    # Back‑end work starts once the user clicks the button
+    # ------------------------------------------------------------------
+
+    if not candidate_name or not role_and_company or not raw_notes.strip():
+        st.error("Please fill in Candidate Name, Role & Company, and Raw Notes before generating the report.")
+        st.stop()
+
+    # 1.  Call GPT to expand the raw notes into structured JSON
+    with st.spinner("Talking to GPT…"):
+        try:
+            gpt_response = generate_report(raw_notes)
+            expanded = json.loads(gpt_response)
+        except Exception as e:
+            st.exception(e)
+            st.stop()
+
+    # 2.  Derive all score aggregations & charts
+    overall_ratings = {
+        "Fit for Role": fit_for_role,
+        "Capabilities": capabilities,
+        "Potential": potential,
+        "Future Considerations": future_consider,
+    }
+
+    bar_scores = aggregate_eight_scores(detailed_ratings)          # 8 × 1–5
+
+    with TemporaryDirectory() as tmpdir, st.spinner("Drawing radar charts…"):
+        radar1_path, radar2_path = build_radar_charts(detailed_ratings, Path(tmpdir))
+
+        # 3.  Build the PowerPoint
+        output_path = Path(tmpdir) / f"Executive_Report_{candidate_name.replace(' ', '_')}.pptx"
+        with st.spinner("Building PowerPoint…"):
+            build_report_pptx(
+                template_path=TEMPLATE_PATH,
+                output_path=output_path,
+                candidate_name=candidate_name,
+                role_and_company=role_and_company,
+                personal_profile=expanded["personal_profile"],
+                strengths=expanded["strengths"],
+                development_areas=expanded["development_areas"],
+                future_considerations=expanded["future_considerations"],
+                personal_development=expanded["personal_development"],
+                org_support=expanded["org_support"],
+                radar_chart_1_path=radar1_path,
+                radar_chart_2_path=radar2_path,
+                bar_scores=bar_scores,
+                summary_ratings=overall_ratings,
+                reasoning_scores=reasoning_scores,
+            )
+
+        # 4.  Offer file for download
+        st.success("Done! Click below to download your report.")
+        with open(output_path, "rb") as ppt_file:
+            st.download_button(
+                label="⬇️ Download PowerPoint",
+                data=ppt_file.read(),
+                file_name=output_path.name,
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+
+
+if __name__ == "__main__":
+    main()
+
