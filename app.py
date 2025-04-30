@@ -1,6 +1,7 @@
 import streamlit as st
 from utils.openai_api import generate_report
 from utils.ppt_builder import build_report_pptx
+from utils.trait_scores import calculate_report_scores
 import tempfile
 
 # --- Streamlit config and authentication ---
@@ -93,6 +94,9 @@ if st.button("Generate Full PowerPoint Report"):
                 ]
                 future_considerations = "Aims to become Regional Director with strong potential."
 
+                # ✅ Calculate scores from ratings
+                bar_scores, radar_data = calculate_report_scores(personal_ratings, capability_ratings)
+
                 # === Generate PowerPoint ===
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
                     ppt_path = tmp.name
@@ -114,3 +118,4 @@ if st.button("Generate Full PowerPoint Report"):
 
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
+
