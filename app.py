@@ -1,13 +1,15 @@
 import streamlit as st
 from utils.openai_api import generate_report
+from utils.ppt_builder import build_report_pptx
 from string import Template
+import tempfile
 import os
 
-# ✅ Must be first Streamlit call
+# ✅ Set page config (must be first Streamlit command)
 st.set_page_config(page_title="Leadership Report Generator", layout="centered")
 
-# --- Simple password protection ---
-PASSWORD = st.secrets.get("APP_PASSWORD", "changeme")  # fallback
+# 🔐 Simple password protection
+PASSWORD = st.secrets.get("APP_PASSWORD", "changeme")
 
 def check_password():
     st.title("🔒 Leadership Report Generator Login")
@@ -17,68 +19,74 @@ def check_password():
     elif password:
         st.error("Incorrect password. Please try again.")
         return False
-    else:
-        return False
+    return False
 
 if not check_password():
     st.stop()
 
-# --- Main app content after successful login ---
+# 🧠 App main content after successful login
 st.title("🧠 Leadership Consulting Report Generator")
-st.markdown("Enter the consultant notes and ratings below to generate a full report.")
+st.markdown("Enter consultant notes, ratings, and identity details below to generate a full report.")
 
-# --- Consultant Notes Input ---
+# === Section 1: Consultant Notes ===
 st.header("1. Consultant Notes")
 notes = st.text_area(
     label="Paste the consultant notes here:",
-    placeholder="Include sections like Personal Profile, Strengths, Development Areas, Future Considerations",
+    placeholder="Include Personal Profile, Strengths, Development Areas, Future Considerations",
     height=300
 )
 
-# --- Ratings Input ---
-st.header("2. Ratings")
-st.markdown("Optional: Use sliders to provide ratings.")
+# === Section 2: Candidate Details ===
+st.header("2. Candidate Details")
+candidate_name = st.text_input("Candidate Name")
+role_and_company = st.text_input("Role and Company")
 
-ratings = {
-    "Leadership": st.slider("Leadership", 1, 5, 3),
-    "Communication": st.slider("Communication", 1, 5, 3),
-    "Strategic Thinking": st.slider("Strategic Thinking", 1, 5, 3),
-    "Emotional Intelligence": st.slider("Emotional Intelligence", 1, 5, 3),
-}
+# === Section 3: Generate PowerPoint ===
+st.header("3. Generate PowerPoint Report")
 
-# --- Load Report Template ---
-try:
-    with open("report_template.txt", "r") as file:
-        template_str = file.read()
-        template = Template(template_str)
-except FileNotFoundError:
-    st.error("❌ Could not find report_template.txt. Please add it to the root of the project.")
-    st.stop()
-
-# --- Generate Report Button ---
-st.header("3. Generate Report")
 if st.button("Generate Full Report"):
-    if not notes.strip():
-        st.warning("Please enter consultant notes before generating the report.")
+    if not notes.strip() or not candidate_name or not role_and_company:
+        st.warning("Please fill in candidate name, role/company, and consultant notes.")
     else:
         with st.spinner("Generating report with GPT-4o..."):
             try:
+                # === Call GPT to generate report text ===
                 ai_report = generate_report(notes)
 
-                # Merge ratings and AI report into template
-                final_report = template.substitute(
-                    notes=notes,
-                    ai_report=ai_report,
-                    leadership=ratings["Leadership"],
-                    communication=ratings["Communication"],
-                    strategic=ratings["Strategic Thinking"],
-                    emotional=ratings["Emotional Intelligence"]
+                # === TEMP placeholder breakdown ===
+                # These would be parsed out from ai_report text later
+                personal_profile_text = "This is a sample personal profile based on the individual's psychological drivers and motivational patterns."
+                strengths = [
+                    {"title": "Strategic Vision", "paragraph": "She can define and drive long-term strategy with clarity and confidence."},
+                    {"title": "Empathy", "paragraph": "She demonstrates strong interpersonal awareness and connects authentically with others."},
+                    {"title": "Decisiveness", "paragraph": "She makes informed decisions quickly, especially under pressure."},
+                ]
+                development_areas = [
+                    {"title": "Delegation", "paragraph": "Could benefit from distributing tasks more effectively across the team."},
+                    {"title": "Adaptability", "paragraph": "Sometimes struggles when priorities shift rapidly in high-change environments."},
+                    {"title": "Data Fluency", "paragraph": "Needs to build greater comfort in using data for decision-making."},
+                ]
+                future_considerations = "She aspires to take on a Regional Director role and shows strong potential with the right mentoring and visibility."
+
+                # === Build and save PowerPoint ===
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
+                    ppt_path = tmp.name
+
+                build_report_pptx(
+                    template_path="templates/Template of Report.pptx",
+                    output_path=ppt_path,
+                    candidate_name=candidate_name,
+                    role_and_company=role_and_company,
+                    personal_profile=personal_profile_text,
+                    strengths=strengths,
+                    development_areas=development_areas,
+                    future_considerations=future_considerations
                 )
 
-                st.success("✅ Report generated successfully!")
-                st.text_area("📄 Final Report", final_report, height=500)
-                st.download_button("📥 Download Report", final_report, file_name="consulting_report.txt")
+                # === Download button ===
+                with open(ppt_path, "rb") as f:
+                    st.success("✅ PowerPoint report generated successfully!")
+                    st.download_button("📥 Download PowerPoint", f, file_name="Leadership_Report.pptx")
 
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
-
