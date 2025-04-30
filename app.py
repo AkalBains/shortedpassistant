@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 """
 Streamlit front‑end for the Leadership Report Generator
 -------------------------------------------------------
@@ -7,17 +6,8 @@ Collects all user inputs, calls GPT to expand the consultant’s notes,
 calculates ratings → charts, sends everything to ppt_builder, and finally
 streams the finished PowerPoint back to the browser.
 
-Assumes you have these local modules in the same repo:
-• openai_api.py – generate_report(raw_notes:str) -> str (JSON string)
-• trait_scores.py – aggregate_eight_scores(), build_summary_ratings()
-• radar_charts.py – build_radar_charts(detailed_ratings:dict) -> (Path, Path)
-• ppt_builder.py – build_report_pptx(**kwargs)  (see docs in that module)
-
 Environment variables needed in Streamlit Cloud:
-• OPENAI_API_KEY  –  your OpenAI key
-
-Save this file at repo root and push to GitHub.  Streamlit Cloud
-will auto‑deploy.
+• OPENAI_API_KEY
 """
 
 import json
@@ -35,15 +25,15 @@ from ppt_builder import build_report_pptx
 # Configuration
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).parent
-TEMPLATE_PATH = ROOT / "templates" / "Executive_Report_template_v2.pptx"
+TEMPLATE_PATH = ROOT / "templates" / "Executive_Report_template_v2.pptx"  # ← single source of truth
 
 # Keep the template in memory – avoids reading from disk for every session
 @st.cache_resource(show_spinner=False)
-def _load_template_bytes() -> bytes:
+def _load_template_bytes() -> bytes:  # noqa: D401
     return TEMPLATE_PATH.read_bytes()
 
 # ---------------------------------------------------------------------------
-# Streamlit UI helpers
+# UI helpers
 # ---------------------------------------------------------------------------
 TRAIT_24 = [
     "mission", "drive", "agency",
@@ -58,15 +48,12 @@ TRAIT_24 = [
 
 REASONING_LABELS = ["verbal", "numerical", "abstract", "overall"]
 
-# Nice‑looking slider labels
-def _slider(label: str, *, key: str, min_value: int = 1, max_value: int = 5, value: int = 3):
-    return st.slider(label.title(), min_value=min_value, max_value=max_value, value=value, key=key)
 
 # ---------------------------------------------------------------------------
 # Main app
 # ---------------------------------------------------------------------------
 
-def main() -> None:
+def main() -> None:  # noqa: C901 – top‑level Streamlit logic
     st.set_page_config(page_title="Leadership Report Generator", layout="wide")
     st.title("📝 Leadership Report Generator")
     st.write("Fill in the form, click *Generate Report*, and download a fully‑formatted PowerPoint.")
@@ -79,28 +66,28 @@ def main() -> None:
         st.header("Consultant's Raw Notes")
         raw_notes = st.text_area("Paste or type your assessment notes here", height=200)
 
-        st.header("Quadrant Ratings (1 = Developing \u2192 5 = Strong)")
+        st.header("Quadrant Ratings (1 = Developing → 5 = Strong)")
         cols1 = st.columns(4)
-        fit_for_role      = cols1[0].slider("Fit for Role", 1, 5, 3)
-        capabilities      = cols1[1].slider("Capabilities", 1, 5, 3)
-        potential         = cols1[2].slider("Potential", 1, 5, 3)
-        future_consider   = cols1[3].slider("Future Considerations", 1, 5, 3)
+        fit_for_role = cols1[0].slider("Fit for Role", 1, 5, 3)
+        capabilities = cols1[1].slider("Capabilities", 1, 5, 3)
+        potential = cols1[2].slider("Potential", 1, 5, 3)
+        future_consider = cols1[3].slider("Future Considerations", 1, 5, 3)
 
-        st.header("24 Trait Ratings (1 = Developing \u2192 5 = Strong)")
+        st.header("24 Trait Ratings (1 = Developing → 5 = Strong)")
         detailed_ratings = {}
         for i in range(0, 24, 4):
             cols = st.columns(4)
-            for j, trait in enumerate(TRAIT_24[i:i+4]):
+            for j, trait in enumerate(TRAIT_24[i : i + 4]):
                 key = f"trait_{trait.replace(' ', '_')}"
                 detailed_ratings[trait] = cols[j].slider(trait.title(), 1, 5, 3, key=key)
 
         st.header("Reasoning Scores (percentile 1 ‒ 99)")
         cols2 = st.columns(4)
         reasoning_scores = {
-            "verbal":   cols2[0].number_input("Verbal",   1, 99, 50, key="verbal"),
-            "numerical":cols2[1].number_input("Numerical",1, 99, 50, key="numerical"),
+            "verbal": cols2[0].number_input("Verbal", 1, 99, 50, key="verbal"),
+            "numerical": cols2[1].number_input("Numerical", 1, 99, 50, key="numerical"),
             "abstract": cols2[2].number_input("Abstract", 1, 99, 50, key="abstract"),
-            "overall":  cols2[3].number_input("Overall",  1, 99, 50, key="overall"),
+            "overall": cols2[3].number_input("Overall", 1, 99, 50, key="overall"),
         }
 
         submitted = st.form_submit_button("🚀 Generate Report")
@@ -109,23 +96,26 @@ def main() -> None:
         st.stop()
 
     # ------------------------------------------------------------------
-    # Back‑end work starts once the user clicks the button
+    # Validation
     # ------------------------------------------------------------------
-
     if not candidate_name or not role_and_company or not raw_notes.strip():
         st.error("Please fill in Candidate Name, Role & Company, and Raw Notes before generating the report.")
         st.stop()
 
-    # 1.  Call GPT to expand the raw notes into structured JSON
+    # ------------------------------------------------------------------
+    # 1. Call GPT
+    # ------------------------------------------------------------------
     with st.spinner("Talking to GPT…"):
         try:
-            gpt_response = generate_report(raw_notes)
-            expanded = json.loads(gpt_response)
-        except Exception as e:
-            st.exception(e)
+            gpt_json = generate_report(raw_notes)
+            expanded = json.loads(gpt_json)
+        except Exception as exc:  # noqa: BLE001 – show any JSON or API issue
+            st.exception(exc)
             st.stop()
 
-    # 2.  Derive all score aggregations & charts
+    # ------------------------------------------------------------------
+    # 2. Compute scores & charts
+    # ------------------------------------------------------------------
     overall_ratings = {
         "Fit for Role": fit_for_role,
         "Capabilities": capabilities,
@@ -133,12 +123,14 @@ def main() -> None:
         "Future Considerations": future_consider,
     }
 
-    bar_scores = aggregate_eight_scores(detailed_ratings)          # 8 × 1–5
+    bar_scores = aggregate_eight_scores(detailed_ratings)
 
     with TemporaryDirectory() as tmpdir, st.spinner("Drawing radar charts…"):
         radar1_path, radar2_path = build_radar_charts(detailed_ratings, Path(tmpdir))
 
-        # 3.  Build the PowerPoint
+        # ------------------------------------------------------------------
+        # 3. Build the PowerPoint
+        # ------------------------------------------------------------------
         output_path = Path(tmpdir) / f"Executive_Report_{candidate_name.replace(' ', '_')}.pptx"
         with st.spinner("Building PowerPoint…"):
             build_report_pptx(
@@ -159,7 +151,9 @@ def main() -> None:
                 reasoning_scores=reasoning_scores,
             )
 
-        # 4.  Offer file for download
+        # ------------------------------------------------------------------
+        # 4. Download link
+        # ------------------------------------------------------------------
         st.success("Done! Click below to download your report.")
         with open(output_path, "rb") as ppt_file:
             st.download_button(
@@ -172,4 +166,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
