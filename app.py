@@ -116,7 +116,8 @@ if st.button("Generate Full PowerPoint Report"):
                     development_areas=development_areas,
                     future_considerations=future_considerations,
                     radar_chart_1_path=radar_chart_1,
-                    radar_chart_2_path=radar_chart_2
+                    radar_chart_2_path=radar_chart_2,
+                    bar_scores=bar_scores  # ✅ NEW: include bar chart data
                 )
 
                 with open(ppt_path, "rb") as f:
@@ -125,4 +126,3 @@ if st.button("Generate Full PowerPoint Report"):
 
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
-
