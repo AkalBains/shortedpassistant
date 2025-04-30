@@ -102,6 +102,14 @@ if st.button("Generate Full PowerPoint Report"):
                 radar_chart_1 = generate_radar_chart(radar_data["Personal Characteristics"], "Personal Characteristics")
                 radar_chart_2 = generate_radar_chart(radar_data["Leadership Capabilities"], "Leadership Capabilities")
 
+                # ✅ Reasoning score dictionary
+                reasoning_scores = {
+                    "Verbal": verbal_score,
+                    "Numerical": numerical_score,
+                    "Abstract": abstract_score,
+                    "Overall": overall_reasoning
+                }
+
                 # === Generate PowerPoint ===
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
                     ppt_path = tmp.name
@@ -117,7 +125,8 @@ if st.button("Generate Full PowerPoint Report"):
                     future_considerations=future_considerations,
                     radar_chart_1_path=radar_chart_1,
                     radar_chart_2_path=radar_chart_2,
-                    bar_scores=bar_scores  # ✅ NEW: include bar chart data
+                    bar_scores=bar_scores,
+                    reasoning_scores=reasoning_scores  # ✅ NEW: pass reasoning scores to page 7
                 )
 
                 with open(ppt_path, "rb") as f:
