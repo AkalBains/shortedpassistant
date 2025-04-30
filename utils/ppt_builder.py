@@ -13,7 +13,8 @@ def build_report_pptx(
     future_considerations,
     radar_chart_1_path=None,
     radar_chart_2_path=None,
-    bar_scores=None
+    bar_scores=None,
+    reasoning_scores=None
 ):
     prs = Presentation(template_path)
 
@@ -57,18 +58,16 @@ def build_report_pptx(
     # === Page 5: Adjust bar widths ===
     if bar_scores:
         slide5 = prs.slides[4]
-        max_width = Inches(5.5)  # Full width for a score of 5
-
+        max_width = Inches(5.5)
         for trait, score in bar_scores.items():
             for shape in slide5.shapes:
                 if shape.has_text_frame and trait.lower() in shape.text.strip().lower():
-                    # Find the nearest non-text shape (the bar) beneath the text box
                     label_top = shape.top
                     label_left = shape.left
                     for bar in slide5.shapes:
                         if not bar.has_text_frame and abs(bar.left - label_left) < Inches(0.1) and bar.top > label_top:
                             bar.width = max_width * (score / 5)
-                            break  # Stop after first match
+                            break
 
     # === Page 6: Insert radar charts ===
     slide6 = prs.slides[5]
@@ -77,5 +76,23 @@ def build_report_pptx(
     if radar_chart_2_path and os.path.exists(radar_chart_2_path):
         slide6.shapes.add_picture(radar_chart_2_path, Inches(5.3), Inches(2.2), height=Inches(4.5))
 
+    # === Page 7: Reasoning scores and bar scaling ===
+    if reasoning_scores:
+        slide7 = prs.slides[6]
+        max_width = Inches(5.5)
+        for label, score in reasoning_scores.items():
+            label_lower = label.lower()
+            for shape in slide7.shapes:
+                if shape.has_text_frame and label_lower in shape.text.strip().lower():
+                    label_top = shape.top
+                    label_left = shape.left
+                    # Update bar below the label
+                    for bar in slide7.shapes:
+                        if not bar.has_text_frame and abs(bar.left - label_left) < Inches(0.1) and bar.top > label_top:
+                            bar.width = max_width * (score / 100)
+                            break
+                    shape.text = f"{score}%"
+
     prs.save(output_path)
     return output_path
+
