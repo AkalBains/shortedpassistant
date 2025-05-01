@@ -1,9 +1,12 @@
 from __future__ import annotations
-"""ppt_builder.py (Python 3.9‑compatible)
---------------------------------------------------
-Fills the cleaned PowerPoint template with narrative, ratings, and images.
-All shapes are addressed **by name** (set once in the template’s Selection
-Pane).  If a shape is missing the builder skips it rather than crashing.
+"""ppt_builder.py – final Python 3.9 version
+===========================================
+*   Preserves the template’s paragraph‑level font & size for every textbox
+*   Moves green rating spheres along the grey track named **track_rating**
+*   Resizes energy bars relative to their *original* width (rating 5)
+*   Enlarges radar charts to 4×4 in if placeholders are tiny
+
+Rename your shapes once in the template and never touch the code again.
 """
 
 from pathlib import Path
@@ -13,42 +16,68 @@ from pptx import Presentation
 from pptx.util import Inches
 
 # ---------------------------------------------------------------------------
-# Helper functions
+# Helpers – lookup, text, bars, balls
 # ---------------------------------------------------------------------------
-
-
-def _set_text(shape, new_text: str) -> None:
-    """Safely replace the text in a shape if it exists."""
-    if shape is None or not shape.has_text_frame:
-        return
-    shape.text = new_text
 
 
 def _safe_shape(slide, target: str):
-    """Return the first shape whose .name matches *target* (case-sensitive)."""
+    """Return the first shape whose .name matches *target* or *None* and warn."""
     for shp in slide.shapes:
         if shp.name == target:
             return shp
+    print(f"[ppt_builder] WARNING – shape '{target}' not found on slide {slide.slide_number}")
     return None
 
 
-def _resize_bar(shape, score: float, max_score: float, max_width_emu: int) -> None:
-    """Resize a rectangle horizontally according to *score* (left edge fixed)."""
+def _set_text_preserve_style(shape, new_text: str) -> None:
+    """Overwrite text while copying the font of each original paragraph."""
+    if shape is None or not shape.has_text_frame:
+        return
+
+    # Snapshot font styles per paragraph (first run per paragraph)
+    templates = []
+    for p in shape.text_frame.paragraphs:
+        if p.runs:
+            templates.append(p.runs[0].font)
+    if not templates:  # empty textbox
+        shape.text = new_text
+        return
+
+    shape.text_frame.clear()
+    for idx, line in enumerate(new_text.split("\n")):
+        p = shape.text_frame.add_paragraph()
+        r = p.add_run()
+        r.text = line
+        tpl = templates[min(idx, len(templates) - 1)]
+        r.font.name = tpl.name
+        r.font.size = tpl.size
+        r.font.bold = tpl.bold
+        r.font.italic = tpl.italic
+        p.level = 0
+
+
+# Cache of original full‑widths per bar rectangle
+_BAR_ORIG_WIDTH: Dict[str, int] = {}
+
+
+def _resize_bar_relative(shape, rating: float) -> None:
+    """Resize *shape* to rating/5 × original width."""
     if shape is None or shape.has_text_frame:
         return
-    shape.width = int(max_width_emu * (score / max_score))
+    if shape.name not in _BAR_ORIG_WIDTH:
+        _BAR_ORIG_WIDTH[shape.name] = shape.width
+    shape.width = int(_BAR_ORIG_WIDTH[shape.name] * (rating / 5.0))
 
 
-def _reposition_ball(ball, rating: int, track_left_emu: int, track_right_emu: int) -> None:
-    """Move the ball along a horizontal track based on a 1‒5 rating."""
+def _move_ball(ball, rating: int, left_emu: int, right_emu: int) -> None:
     if ball is None:
         return
-    frac = (rating - 1) / 4  # 0.0 → 1.0
-    ball.left = track_left_emu + int((track_right_emu - track_left_emu) * frac)
+    frac = (rating - 1) / 4.0
+    ball.left = int(left_emu + frac * (right_emu - left_emu))
 
 
 # ---------------------------------------------------------------------------
-# Main public helper
+# Main builder
 # ---------------------------------------------------------------------------
 
 def build_report_pptx(
@@ -69,66 +98,46 @@ def build_report_pptx(
     summary_ratings: Optional[Dict[str, int]] = None,
     reasoning_scores: Optional[Dict[str, int]] = None,
 ) -> Path:
-    """Fill the PowerPoint template and save it.
-
-    Parameters
-    ----------
-    template_path, output_path
-        Either *str* or *pathlib.Path* – will be converted to `str` for python‑pptx.
-
-    Returns
-    -------
-    Path
-        The path to the saved file (useful for Streamlit’s download button).
-    """
-
     prs = Presentation(str(template_path))
 
-    # ------------------------------------------------------------------
-    # Slide 1 – basics
-    # ------------------------------------------------------------------
+    # --------------------  SLIDE 1  --------------------
     s1 = prs.slides[0]
-    _set_text(_safe_shape(s1, "candidate_name"), candidate_name)
-    _set_text(_safe_shape(s1, "role_company"), role_and_company)
+    _set_text_preserve_style(_safe_shape(s1, "candidate_name"), candidate_name)
+    _set_text_preserve_style(_safe_shape(s1, "role_company"), role_and_company)
 
-    # ------------------------------------------------------------------
-    # Slide 3 – narrative & green balls
-    # ------------------------------------------------------------------
+    # --------------------  SLIDE 3  --------------------
     s3 = prs.slides[2]
-    _set_text(_safe_shape(s3, "personal_profile"), personal_profile)
+    _set_text_preserve_style(_safe_shape(s3, "personal_profile"), personal_profile)
 
     for i in range(3):
-        _set_text(_safe_shape(s3, f"strength_{i+1}_title"), strengths[i]["title"])
-        _set_text(_safe_shape(s3, f"strength_{i+1}_body"), strengths[i]["paragraph"])
-        _set_text(_safe_shape(s3, f"dev_{i+1}_title"), development_areas[i]["title"])
-        _set_text(_safe_shape(s3, f"dev_{i+1}_body"), development_areas[i]["paragraph"])
+        _set_text_preserve_style(_safe_shape(s3, f"strength_{i+1}_title"), strengths[i]["title"])
+        _set_text_preserve_style(_safe_shape(s3, f"strength_{i+1}_body"), strengths[i]["paragraph"])
+        _set_text_preserve_style(_safe_shape(s3, f"dev_{i+1}_title"), development_areas[i]["title"])
+        _set_text_preserve_style(_safe_shape(s3, f"dev_{i+1}_body"), development_areas[i]["paragraph"])
 
-    _set_text(_safe_shape(s3, "future_considerations"), future_considerations)
+    _set_text_preserve_style(_safe_shape(s3, "future_considerations"), future_considerations)
 
-    if summary_ratings:
-        track_left = Inches(1.2).emu
-        track_right = Inches(6.5).emu
-        _reposition_ball(_safe_shape(s3, "ball_fit"), summary_ratings.get("Fit for Role", 3), track_left, track_right)
-        _reposition_ball(_safe_shape(s3, "ball_cap"), summary_ratings.get("Capabilities", 3), track_left, track_right)
-        _reposition_ball(_safe_shape(s3, "ball_pot"), summary_ratings.get("Potential", 3), track_left, track_right)
-        _reposition_ball(_safe_shape(s3, "ball_future"), summary_ratings.get("Future Considerations", 3), track_left, track_right)
+    # green balls
+    track = _safe_shape(s3, "track_rating")  # grey track rectangle
+    if summary_ratings and track:
+        left_emu = track.left
+        right_emu = track.left + track.width
+        _move_ball(_safe_shape(s3, "ball_fit"), summary_ratings["Fit for Role"], left_emu, right_emu)
+        _move_ball(_safe_shape(s3, "ball_cap"), summary_ratings["Capabilities"], left_emu, right_emu)
+        _move_ball(_safe_shape(s3, "ball_pot"), summary_ratings["Potential"], left_emu, right_emu)
+        _move_ball(_safe_shape(s3, "ball_future"), summary_ratings["Future Considerations"], left_emu, right_emu)
 
-    # ------------------------------------------------------------------
-    # Slide 4 – development suggestions
-    # ------------------------------------------------------------------
+    # --------------------  SLIDE 4  --------------------
     s4 = prs.slides[3]
     for i in range(2):
-        _set_text(_safe_shape(s4, f"pd_{i+1}_title"), personal_development[i]["title"])
-        _set_text(_safe_shape(s4, f"pd_{i+1}_body"), personal_development[i]["paragraph"])
-        _set_text(_safe_shape(s4, f"org_{i+1}_title"), org_support[i]["title"])
-        _set_text(_safe_shape(s4, f"org_{i+1}_body"), org_support[i]["paragraph"])
+        _set_text_preserve_style(_safe_shape(s4, f"pd_{i+1}_title"), personal_development[i]["title"])
+        _set_text_preserve_style(_safe_shape(s4, f"pd_{i+1}_body"), personal_development[i]["paragraph"])
+        _set_text_preserve_style(_safe_shape(s4, f"org_{i+1}_title"), org_support[i]["title"])
+        _set_text_preserve_style(_safe_shape(s4, f"org_{i+1}_body"), org_support[i]["paragraph"])
 
-    # ------------------------------------------------------------------
-    # Slide 5 – eight energy bars
-    # ------------------------------------------------------------------
+    # --------------------  SLIDE 5  --------------------
     if bar_scores:
         s5 = prs.slides[4]
-        max_width = Inches(5.5).emu
         name_map = {
             "purpose energy": "bar_purpose",
             "intellectual energy": "bar_intellectual",
@@ -140,41 +149,34 @@ def build_report_pptx(
             "powerful relationships": "bar_relationships",
         }
         for label, score in bar_scores.items():
-            shape_name = name_map.get(label.lower())
-            if shape_name:
-                _resize_bar(_safe_shape(s5, shape_name), score, 5.0, max_width)
+            shp = _safe_shape(s5, name_map[label.lower()])
+            _resize_bar_relative(shp, score)
 
-    # ------------------------------------------------------------------
-    # Slide 6 – radar charts
-    # ------------------------------------------------------------------
+    # --------------------  SLIDE 6  --------------------
     s6 = prs.slides[5]
-    if radar_chart_1_path and Path(radar_chart_1_path).exists():
-        ph1 = _safe_shape(s6, "spider_1")
-        if ph1:
-            s6.shapes.add_picture(str(radar_chart_1_path), ph1.left, ph1.top, ph1.width, ph1.height)
-            ph1._element.getparent().remove(ph1._element)
+    RAD_W = Inches(4.5)
+    RAD_H = Inches(4.5)
 
-    if radar_chart_2_path and Path(radar_chart_2_path).exists():
-        ph2 = _safe_shape(s6, "spider_2")
-        if ph2:
-            s6.shapes.add_picture(str(radar_chart_2_path), ph2.left, ph2.top, ph2.width, ph2.height)
-            ph2._element.getparent().remove(ph2._element)
+    def _insert_radar(ph_name: str, png_path):
+        ph = _safe_shape(s6, ph_name)
+        if ph and Path(png_path).exists():
+            w = ph.width if ph.height > Inches(3) else RAD_W
+            h = ph.height if ph.height > Inches(3) else RAD_H
+            s6.shapes.add_picture(str(png_path), ph.left, ph.top, w, h)
+            ph._element.getparent().remove(ph._element)
 
-    # ------------------------------------------------------------------
-    # Slide 7 – reasoning bars
-    # ------------------------------------------------------------------
+    if radar_chart_1_path:
+        _insert_radar("spider_1", radar_chart_1_path)
+    if radar_chart_2_path:
+        _insert_radar("spider_2", radar_chart_2_path)
+
+    # --------------------  SLIDE 7  --------------------
     if reasoning_scores:
         s7 = prs.slides[6]
-        max_width = Inches(5.5).emu
         for label, score in reasoning_scores.items():
-            lname = label.lower()
-            _resize_bar(_safe_shape(s7, f"bar_{lname}"), float(score), 100.0, max_width)
-            _set_text(_safe_shape(s7, f"label_{lname}"), f"{score}%")
+            _resize_bar_relative(_safe_shape(s7, f"bar_{label.lower()}"), float(score) / 20)  # 100 → 5
+            _set_text_preserve_style(_safe_shape(s7, f"label_{label.lower()}"), f"{score}%")
 
-    # ------------------------------------------------------------------
-    # Save and return path
-    # ------------------------------------------------------------------
+    # --------------------  SAVE  --------------------
     out_path = Path(output_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    prs.save(str(out_path))
-    return out_path
+    out
