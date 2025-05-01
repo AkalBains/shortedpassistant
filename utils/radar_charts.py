@@ -1,16 +1,11 @@
-from __future__ import annotations
-"""radar_charts.py – create PNG radar charts for slide 6
--------------------------------------------------------
-`build_radar_charts()` is the public entry point used by *app.py*.
-It takes the full 24‑trait ratings dictionary and an output directory,
-then returns two PNG paths that match the placeholder sizes in the template.
-
-Charts are static (matplotlib) and use the library’s default colour cycle so
-we don’t need to set explicit colours.
+"""radar_charts.py – create PNG radar charts for slide 6 (Python 3.9-compatible)
+--------------------------------------------------------------------------
+`build_radar_charts()` generates the two static radar charts used on slide 6
+and returns their file paths.
 """
 
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union, Optional
 import tempfile
 import math
 
@@ -24,7 +19,7 @@ from trait_scores import split_radar_groups
 # Helper – single radar chart
 # ---------------------------------------------------------------------------
 
-def _plot_radar(ax, trait_scores: Dict[str, int]):
+def _plot_radar(ax, trait_scores: Dict[str, int]) -> None:
     labels = list(trait_scores.keys())
     values = list(trait_scores.values())
 
@@ -45,46 +40,45 @@ def _plot_radar(ax, trait_scores: Dict[str, int]):
 # Public helper – build both charts and return their paths
 # ---------------------------------------------------------------------------
 
-def build_radar_charts(detailed_ratings: Dict[str, int | str], out_dir: Path | None = None) -> Tuple[Path, Path]:
+def build_radar_charts(
+    detailed_ratings: Dict[str, Union[int, str]],
+    out_dir: Optional[Union[str, Path]] = None,
+) -> Tuple[Path, Path]:
     """Generate two radar-chart PNGs and return their file paths.
 
     Parameters
     ----------
     detailed_ratings : dict
         Mapping of 24 trait names → rating (1‒5 int or label string).
-    out_dir : Path | None
+    out_dir : Path | str | None
         Directory to save the PNG files (created if missing).  If *None*
-        we use a temporary directory and return *Path* objects inside it.
-
-    Returns
-    -------
-    (Path, Path)
-        The file paths for radar_chart_1, radar_chart_2 in that order.
+        a temporary directory is used.
     """
 
     radar1_data, radar2_data = split_radar_groups(detailed_ratings)
 
+    # ensure output directory exists
     if out_dir is None:
-        out_dir = Path(tempfile.mkdtemp())
+        out_path = Path(tempfile.mkdtemp())
     else:
-        out_dir = Path(out_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = Path(out_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
 
-    out1 = out_dir / "radar_1.png"
-    out2 = out_dir / "radar_2.png"
+    img1 = out_path / "radar_1.png"
+    img2 = out_path / "radar_2.png"
 
-    # Chart #1 – personal characteristics (11 traits)
-    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-    _plot_radar(ax, radar1_data)
-    fig.tight_layout()
-    fig.savefig(out1, dpi=110)
-    plt.close(fig)
+    # Chart 1 – personal characteristics (11 traits)
+    fig1, ax1 = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+    _plot_radar(ax1, radar1_data)
+    fig1.tight_layout()
+    fig1.savefig(img1, dpi=110)
+    plt.close(fig1)
 
-    # Chart #2 – leadership capabilities (13 traits)
-    fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-    _plot_radar(ax, radar2_data)
-    fig.tight_layout()
-    fig.savefig(out2, dpi=110)
-    plt.close(fig)
+    # Chart 2 – leadership capabilities (13 traits)
+    fig2, ax2 = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+    _plot_radar(ax2, radar2_data)
+    fig2.tight_layout()
+    fig2.savefig(img2, dpi=110)
+    plt.close(fig2)
 
-    return out1, out2
+    return img1, img2
