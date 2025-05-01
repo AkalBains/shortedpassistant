@@ -1,18 +1,12 @@
 from __future__ import annotations
 """
-Streamlit front‑end for the Leadership Report Generator
--------------------------------------------------------
-Collects all user inputs, calls GPT to expand the consultant’s notes,
-calculates ratings → charts, sends everything to ppt_builder, and finally
-streams the finished PowerPoint back to the browser.
-
-Environment variables needed in Streamlit Cloud:
-• OPENAI_API_KEY
+Streamlit front‑end for the Leadership Report Generator (Python 3.9‑safe)
 """
 
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Dict
 
 import streamlit as st
 
@@ -22,18 +16,23 @@ from radar_charts import build_radar_charts
 from ppt_builder import build_report_pptx
 
 # ---------------------------------------------------------------------------
+# Page config *must* be set before any other Streamlit command
+# ---------------------------------------------------------------------------
+st.set_page_config(page_title="Leadership Report Generator", layout="wide")
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).parent
-TEMPLATE_PATH = ROOT / "templates" / "Executive_Report_template_v2.pptx"  # ← single source of truth
+TEMPLATE_PATH = ROOT / "templates" / "Executive_Report_template_v2.pptx"
 
-# Keep the template in memory – avoids reading from disk for every session
+# Cache the template bytes so multiple users don’t read from disk every run.
 @st.cache_resource(show_spinner=False)
 def _load_template_bytes() -> bytes:  # noqa: D401
     return TEMPLATE_PATH.read_bytes()
 
 # ---------------------------------------------------------------------------
-# UI helpers
+# Constants
 # ---------------------------------------------------------------------------
 TRAIT_24 = [
     "mission", "drive", "agency",
@@ -46,17 +45,14 @@ TRAIT_24 = [
     "aligns stakeholders", "models collaboration", "builds teams",
 ]
 
-REASONING_LABELS = ["verbal", "numerical", "abstract", "overall"]
-
-
 # ---------------------------------------------------------------------------
 # Main app
 # ---------------------------------------------------------------------------
 
 def main() -> None:  # noqa: C901 – top‑level Streamlit logic
-    st.set_page_config(page_title="Leadership Report Generator", layout="wide")
     st.title("📝 Leadership Report Generator")
-    st.write("Fill in the form, click *Generate Report*, and download a fully‑formatted PowerPoint.")
+    st.write(
+        "Fill in the form, click *Generate Report*, and download a fully‑formatted PowerPoint.")
 
     with st.form("report_form", clear_on_submit=False):
         st.header("Candidate Basics")
@@ -74,7 +70,7 @@ def main() -> None:  # noqa: C901 – top‑level Streamlit logic
         future_consider = cols1[3].slider("Future Considerations", 1, 5, 3)
 
         st.header("24 Trait Ratings (1 = Developing → 5 = Strong)")
-        detailed_ratings = {}
+        detailed_ratings: Dict[str, int] = {}
         for i in range(0, 24, 4):
             cols = st.columns(4)
             for j, trait in enumerate(TRAIT_24[i : i + 4]):
@@ -166,3 +162,4 @@ def main() -> None:  # noqa: C901 – top‑level Streamlit logic
 
 if __name__ == "__main__":
     main()
+
