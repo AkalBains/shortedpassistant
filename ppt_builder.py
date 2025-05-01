@@ -24,12 +24,12 @@ def _set_text(shape, new_text: str) -> None:
     shape.text = new_text
 
 
-def _safe_shape(slide, name: str):
-    """Return a shape by name or *None* if it doesn’t exist."""
-    try:
-        return slide.shapes[name]
-    except KeyError:
-        return None
+def _safe_shape(slide, target: str):
+    """Return the first shape whose .name matches *target* (case-sensitive)."""
+    for shp in slide.shapes:
+        if shp.name == target:
+            return shp
+    return None
 
 
 def _resize_bar(shape, score: float, max_score: float, max_width_emu: int) -> None:
