@@ -1,169 +1,59 @@
-from __future__ import annotations
-"""
-Streamlit front-end for the Leadership Report Generator  (Python 3.9 safe)
-------------------------------------------------------------------------
-Guards `st.set_page_config()` so it runs only once, even if some imported
-module makes an st.* call during a hot-reload.
-"""
-
 import streamlit as st
+import pandas as pd
+import os
+from dotenv import load_dotenv
 
-# ----------------------------------------------------------------------
-# Page config – must be first, but guard so it's called only once
-# ----------------------------------------------------------------------
-if not st.session_state.get("_page_config_set"):
-    st.set_page_config(page_title="Leadership Report Generator", layout="wide")
-    st.session_state["_page_config_set"] = True
-
-# ----------------------------------------------------------------------
-# Standard & local imports  (safe after the guard)
-# ----------------------------------------------------------------------
-import json
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Dict
-
+from ppt_builder import create_powerpoint
+from radar_charts import generate_radar_charts
+from trait_scores import process_traits
 from openai_api import generate_report
-from trait_scores import aggregate_eight_scores
-from radar_charts import build_radar_charts
-from ppt_builder import build_report_pptx
 
-# ----------------------------------------------------------------------
-# Configuration & caching
-# ----------------------------------------------------------------------
-ROOT = Path(__file__).parent
-TEMPLATE_PATH = ROOT / "templates" / "Executive_Report_template_v2.pptx"
+# 🔧 Configure Streamlit page – must be FIRST Streamlit command
+st.set_page_config(page_title="Leadership Report Generator", layout="wide")
 
-@st.cache_resource(show_spinner=False)
-def _load_template_bytes() -> bytes:
-    return TEMPLATE_PATH.read_bytes()
+# 🌐 Load environment variables
+load_dotenv()
 
-# ----------------------------------------------------------------------
-# Constants
-# ----------------------------------------------------------------------
-TRAIT_24 = [
-    "mission", "drive", "agency",
-    "judgment", "incisiveness", "curiosity",
-    "positivity", "resilience", "growth mindset",
-    "compelling impact", "connection", "environmental insight",
-    "achieves sustainable impact", "creates focus", "orchestrates delivery",
-    "frames complexity", "identifies new possibilities", "generates solutions",
-    "inspires people", "drives culture", "grows self and others",
-    "aligns stakeholders", "models collaboration", "builds teams",
-]
+# 🧠 App Title
+st.title("🧾 Leadership Report Generator")
 
-# ----------------------------------------------------------------------
-# Main app
-# ----------------------------------------------------------------------
-def main() -> None:
-    st.title("📝 Leadership Report Generator")
-    st.write(
-        "Fill in the form, click *Generate Report*, and download a fully-formatted PowerPoint."
-    )
+# 📤 File uploader for CSV input
+uploaded_file = st.file_uploader("Upload CSV file with leadership assessment data", type=["csv"])
 
-    # --------------------  INPUT FORM  --------------------
-    with st.form("report_form", clear_on_submit=False):
-        st.header("Candidate Basics")
-        candidate_name = st.text_input("Candidate Name", max_chars=80)
-        role_and_company = st.text_input("Role & Company", max_chars=120)
+# 💡 When file is uploaded, process it
+if uploaded_file:
+    try:
+        df = pd.read_csv(uploaded_file)
+        st.success("CSV file loaded successfully!")
+        st.dataframe(df.head())
 
-        st.header("Consultant's Raw Notes")
-        raw_notes = st.text_area("Paste or type your assessment notes here", height=200)
+        # 🧮 Step 1: Process trait scores
+        trait_data = process_traits(df)
+        st.subheader("Trait Scores")
+        st.dataframe(trait_data)
 
-        st.header("Quadrant Ratings (1 = Developing → 5 = Strong)")
-        cols1 = st.columns(4)
-        fit_for_role = cols1[0].slider("Fit for Role", 1, 5, 3)
-        capabilities = cols1[1].slider("Capabilities", 1, 5, 3)
-        potential = cols1[2].slider("Potential", 1, 5, 3)
-        future_consider = cols1[3].slider("Future Considerations", 1, 5, 3)
+        # 📊 Step 2: Generate radar charts
+        radar_imgs = generate_radar_charts(trait_data)
 
-        st.header("24 Trait Ratings (1 = Developing → 5 = Strong)")
-        detailed_ratings: Dict[str, int] = {}
-        for i in range(0, 24, 4):
-            cols = st.columns(4)
-            for j, trait in enumerate(TRAIT_24[i : i + 4]):
-                key = f"trait_{trait.replace(' ', '_')}"
-                detailed_ratings[trait] = cols[j].slider(
-                    trait.title(), 1, 5, 3, key=key
-                )
+        # ✍️ Step 3: Generate AI-powered leadership report
+        st.subheader("Generating Leadership Report...")
+        report_text = generate_report(trait_data)
+        st.text_area("Leadership Report", value=report_text, height=300)
 
-        st.header("Reasoning Scores (percentile 1–99)")
-        cols2 = st.columns(4)
-        reasoning_scores = {
-            "verbal": cols2[0].number_input("Verbal", 1, 99, 50),
-            "numerical": cols2[1].number_input("Numerical", 1, 99, 50),
-            "abstract": cols2[2].number_input("Abstract", 1, 99, 50),
-            "overall": cols2[3].number_input("Overall", 1, 99, 50),
-        }
+        # 📽 Step 4: Build PowerPoint presentation
+        pptx_file = create_powerpoint(trait_data, radar_imgs, report_text)
 
-        submitted = st.form_submit_button("🚀 Generate Report")
-
-    if not submitted:
-        st.stop()
-
-    # --------------------  VALIDATION  --------------------
-    if not candidate_name or not role_and_company or not raw_notes.strip():
-        st.error(
-            "Please fill in Candidate Name, Role & Company, and Raw Notes before generating the report."
-        )
-        st.stop()
-
-    # --------------------  GPT CALL  --------------------
-    with st.spinner("Talking to GPT…"):
-        try:
-            expanded = json.loads(generate_report(raw_notes))
-        except Exception as exc:
-            st.exception(exc)
-            st.stop()
-
-    # --------------------  SCORE AGGREGATION & CHARTS  --------------------
-    overall_ratings = {
-        "Fit for Role": fit_for_role,
-        "Capabilities": capabilities,
-        "Potential": potential,
-        "Future Considerations": future_consider,
-    }
-    bar_scores = aggregate_eight_scores(detailed_ratings)
-
-    with TemporaryDirectory() as tmpdir, st.spinner("Drawing radar charts…"):
-        radar1_path, radar2_path = build_radar_charts(
-            detailed_ratings, Path(tmpdir)
+        # 📥 Allow download
+        st.subheader("Download PowerPoint")
+        st.download_button(
+            label="📥 Download Presentation",
+            data=pptx_file,
+            file_name="leadership_report.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
 
-        # --------------------  BUILD POWERPOINT  --------------------
-        output_path = (
-            Path(tmpdir) / f"Executive_Report_{candidate_name.replace(' ', '_')}.pptx"
-        )
-        with st.spinner("Building PowerPoint…"):
-            build_report_pptx(
-                template_path=TEMPLATE_PATH,
-                output_path=output_path,
-                candidate_name=candidate_name,
-                role_and_company=role_and_company,
-                personal_profile=expanded["personal_profile"],
-                strengths=expanded["strengths"],
-                development_areas=expanded["development_areas"],
-                future_considerations=expanded["future_considerations"],
-                personal_development=expanded["personal_development"],
-                org_support=expanded["org_support"],
-                radar_chart_1_path=radar1_path,
-                radar_chart_2_path=radar2_path,
-                bar_scores=bar_scores,
-                summary_ratings=overall_ratings,
-                reasoning_scores=reasoning_scores,
-            )
+    except Exception as e:
+        st.error(f"An error occurred: {e}")
 
-        # --------------------  DOWNLOAD LINK  --------------------
-        st.success("Done! Click below to download your report.")
-        with open(output_path, "rb") as ppt_file:
-            st.download_button(
-                label="⬇️ Download PowerPoint",
-                data=ppt_file.read(),
-                file_name=output_path.name,
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            )
-
-
-if __name__ == "__main__":
-    main()
-
+else:
+    st.info("Please upload a CSV file to begin.")
