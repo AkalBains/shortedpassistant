@@ -6,7 +6,6 @@ corresponding strings) into bar‑chart and radar‑chart structures.
 
 from statistics import mean
 from typing import Dict, Tuple, Union
-import pandas as pd
 
 # ---------------------------------------------------------------------------
 # Normalisation helpers
@@ -20,6 +19,7 @@ _SCALE_MAP = {
     "strong": 5,
 }
 
+
 def _to_numeric(val: Union[int, float, str]) -> int:
     """Convert a rating to an integer 1‑5.
 
@@ -32,9 +32,10 @@ def _to_numeric(val: Union[int, float, str]) -> int:
             return iv
     elif isinstance(val, str):
         key = val.strip().lower()
-        if key in _SCALE_MAP:
+        if key in _SCALE_MAP:  # pragma: no branch
             return _SCALE_MAP[key]
     raise ValueError(f"Unsupported rating value: {val!r}")
+
 
 # ---------------------------------------------------------------------------
 # Trait → group mappings
@@ -45,8 +46,17 @@ _GROUP_MAP = {
     "intellectual energy": ["judgment", "incisiveness", "curiosity"],
     "emotional energy": ["positivity", "resilience", "growth mindset"],
     "people energy": ["compelling impact", "connection", "environmental insight"],
-    "performance impact": ["achieves sustainable impact", "creates focus", "orchestrates delivery"],
-    "strategic framing": ["frames complexity", "identifies new possibilities", "generates solutions"],
+
+    "performance impact": [
+        "achieves sustainable impact",
+        "creates focus",
+        "orchestrates delivery",
+    ],
+    "strategic framing": [
+        "frames complexity",
+        "identifies new possibilities",
+        "generates solutions",
+    ],
     "mobilisation": ["inspires people", "drives culture", "grows self and others"],
     "powerful relationships": ["aligns stakeholders", "models collaboration", "builds teams"],
 }
@@ -57,7 +67,6 @@ _RADAR1_TRAITS = [
     "positivity", "resilience", "growth mindset",
     "compelling impact", "connection", "environmental insight",
 ]
-
 _RADAR2_TRAITS = [
     "achieves sustainable impact", "creates focus", "orchestrates delivery",
     "frames complexity", "identifies new possibilities", "generates solutions",
@@ -66,7 +75,7 @@ _RADAR2_TRAITS = [
 ]
 
 # ---------------------------------------------------------------------------
-# Public helpers for aggregation
+# Public helpers
 # ---------------------------------------------------------------------------
 
 def aggregate_eight_scores(detailed_ratings: Dict[str, Union[int, str]]) -> Dict[str, float]:
@@ -83,6 +92,7 @@ def aggregate_eight_scores(detailed_ratings: Dict[str, Union[int, str]]) -> Dict
 
     return scores
 
+
 def split_radar_groups(detailed_ratings: Dict[str, Union[int, str]]) -> Tuple[Dict[str, int], Dict[str, int]]:
     """Return two dicts for radar‑chart #1 and #2 (numeric 1‑5)."""
     norm = {k.lower(): _to_numeric(v) for k, v in detailed_ratings.items()}
@@ -90,24 +100,3 @@ def split_radar_groups(detailed_ratings: Dict[str, Union[int, str]]) -> Tuple[Di
     radar2 = {trait: norm[trait] for trait in _RADAR2_TRAITS}
     return radar1, radar2
 
-# ---------------------------------------------------------------------------
-# Streamlit helper
-# ---------------------------------------------------------------------------
-
-def process_traits(df: pd.DataFrame) -> pd.DataFrame:
-    """Takes a DataFrame of raw responses and computes 8 energy scores per row."""
-    trait_scores = []
-    for _, row in df.iterrows():
-        raw_ratings = row.to_dict()
-        try:
-            scores = aggregate_eight_scores(raw_ratings)
-        except ValueError as e:
-            # Handle missing or invalid data gracefully
-            scores = {group: None for group in _GROUP_MAP}
-        trait_scores.append(scores)
-
-    scores_df = pd.DataFrame(trait_scores)
-    # Add Name or ID if available
-    if 'Name' in df.columns:
-        scores_df.insert(0, 'Name', df['Name'])
-    return scores_df
