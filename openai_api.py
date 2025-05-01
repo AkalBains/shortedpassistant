@@ -7,7 +7,9 @@ reply without post‑processing.
 
 Public helper
 -------------
+```
 generate_report(raw_notes: str) -> str  # JSON string
+```
 
 Dependencies
 ------------
@@ -29,6 +31,14 @@ from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# OpenAI client setup
+# ---------------------------------------------------------------------------
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+if not client.api_key:
+    raise RuntimeError("OPENAI_API_KEY missing – set it in .env or Streamlit secrets")
 
 # ---------------------------------------------------------------------------
 # Prompt engineering – combines *your* instructions + strict JSON schema
@@ -69,12 +79,6 @@ SYSTEM_PROMPT = f"{_NARRATIVE_INSTRUCTIONS}\n\n{_JSON_REQUIREMENT}"
 
 def _chat(messages: List[Dict]) -> str:
     """Low‑level wrapper. Returns raw assistant text."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY missing – set it in .env or Streamlit secrets")
-
-    client = OpenAI(api_key=api_key)
-
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
@@ -101,6 +105,7 @@ def generate_report(raw_notes: str) -> str:
     str
         A JSON string that adheres to the schema in `SYSTEM_PROMPT`.
     """
+
     if not raw_notes.strip():
         raise ValueError("raw_notes is empty – nothing to send to GPT")
 
