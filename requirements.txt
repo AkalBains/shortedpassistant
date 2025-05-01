@@ -4,3 +4,4 @@ python-pptx
 python-dotenv
 matplotlib
 backoff==2.2.1
+from io import BytesIO
