@@ -1,18 +1,23 @@
 from __future__ import annotations
-"""app.py – single‑page Streamlit app (Python 3.9)
-------------------------------------------------
-The *first* Streamlit command executed **must** be `st.set_page_config`, so we
-import Streamlit, set the page config, and *then* import everything else.
+"""
+Streamlit front-end for the Leadership Report Generator  (Python 3.9 safe)
+------------------------------------------------------------------------
+Guards `st.set_page_config()` so it runs only once, even if some imported
+module makes an st.* call during a hot-reload.
 """
 
 import streamlit as st
 
-# Page‑level configuration must come before any other st.* call or decorator.
-st.set_page_config(page_title="Leadership Report Generator", layout="wide")
+# ----------------------------------------------------------------------
+# Page config – must be first, but guard so it's called only once
+# ----------------------------------------------------------------------
+if not st.session_state.get("_page_config_set"):
+    st.set_page_config(page_title="Leadership Report Generator", layout="wide")
+    st.session_state["_page_config_set"] = True
 
-# ---------------------------------------------------------------------------
-# Standard & local imports (safe after set_page_config)
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------
+# Standard & local imports  (safe after the guard)
+# ----------------------------------------------------------------------
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -23,20 +28,19 @@ from trait_scores import aggregate_eight_scores
 from radar_charts import build_radar_charts
 from ppt_builder import build_report_pptx
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------
 # Configuration & caching
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------
 ROOT = Path(__file__).parent
 TEMPLATE_PATH = ROOT / "templates" / "Executive_Report_template_v2.pptx"
 
 @st.cache_resource(show_spinner=False)
-def _load_template_bytes() -> bytes:  # noqa: D401 – keep short description
-    """Cache PPTX bytes so repeated runs don’t hit disk."""
+def _load_template_bytes() -> bytes:
     return TEMPLATE_PATH.read_bytes()
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------
 # Constants
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------
 TRAIT_24 = [
     "mission", "drive", "agency",
     "judgment", "incisiveness", "curiosity",
@@ -48,14 +52,14 @@ TRAIT_24 = [
     "aligns stakeholders", "models collaboration", "builds teams",
 ]
 
-# ---------------------------------------------------------------------------
+# ----------------------------------------------------------------------
 # Main app
-# ---------------------------------------------------------------------------
-
-def main() -> None:  # noqa: C901 – Streamlit code can be long
+# ----------------------------------------------------------------------
+def main() -> None:
     st.title("📝 Leadership Report Generator")
     st.write(
-        "Fill in the form, click *Generate Report*, and download a fully‑formatted PowerPoint.")
+        "Fill in the form, click *Generate Report*, and download a fully-formatted PowerPoint."
+    )
 
     # --------------------  INPUT FORM  --------------------
     with st.form("report_form", clear_on_submit=False):
@@ -79,15 +83,17 @@ def main() -> None:  # noqa: C901 – Streamlit code can be long
             cols = st.columns(4)
             for j, trait in enumerate(TRAIT_24[i : i + 4]):
                 key = f"trait_{trait.replace(' ', '_')}"
-                detailed_ratings[trait] = cols[j].slider(trait.title(), 1, 5, 3, key=key)
+                detailed_ratings[trait] = cols[j].slider(
+                    trait.title(), 1, 5, 3, key=key
+                )
 
         st.header("Reasoning Scores (percentile 1–99)")
         cols2 = st.columns(4)
         reasoning_scores = {
-            "verbal": cols2[0].number_input("Verbal", 1, 99, 50, key="verbal"),
-            "numerical": cols2[1].number_input("Numerical", 1, 99, 50, key="numerical"),
-            "abstract": cols2[2].number_input("Abstract", 1, 99, 50, key="abstract"),
-            "overall": cols2[3].number_input("Overall", 1, 99, 50, key="overall"),
+            "verbal": cols2[0].number_input("Verbal", 1, 99, 50),
+            "numerical": cols2[1].number_input("Numerical", 1, 99, 50),
+            "abstract": cols2[2].number_input("Abstract", 1, 99, 50),
+            "overall": cols2[3].number_input("Overall", 1, 99, 50),
         }
 
         submitted = st.form_submit_button("🚀 Generate Report")
@@ -97,15 +103,16 @@ def main() -> None:  # noqa: C901 – Streamlit code can be long
 
     # --------------------  VALIDATION  --------------------
     if not candidate_name or not role_and_company or not raw_notes.strip():
-        st.error("Please fill in Candidate Name, Role & Company, and Raw Notes before generating the report.")
+        st.error(
+            "Please fill in Candidate Name, Role & Company, and Raw Notes before generating the report."
+        )
         st.stop()
 
     # --------------------  GPT CALL  --------------------
     with st.spinner("Talking to GPT…"):
         try:
-            gpt_json = generate_report(raw_notes)
-            expanded = json.loads(gpt_json)
-        except Exception as exc:  # noqa: BLE001
+            expanded = json.loads(generate_report(raw_notes))
+        except Exception as exc:
             st.exception(exc)
             st.stop()
 
@@ -116,14 +123,17 @@ def main() -> None:  # noqa: C901 – Streamlit code can be long
         "Potential": potential,
         "Future Considerations": future_consider,
     }
-
     bar_scores = aggregate_eight_scores(detailed_ratings)
 
     with TemporaryDirectory() as tmpdir, st.spinner("Drawing radar charts…"):
-        radar1_path, radar2_path = build_radar_charts(detailed_ratings, Path(tmpdir))
+        radar1_path, radar2_path = build_radar_charts(
+            detailed_ratings, Path(tmpdir)
+        )
 
         # --------------------  BUILD POWERPOINT  --------------------
-        output_path = Path(tmpdir) / f"Executive_Report_{candidate_name.replace(' ', '_')}.pptx"
+        output_path = (
+            Path(tmpdir) / f"Executive_Report_{candidate_name.replace(' ', '_')}.pptx"
+        )
         with st.spinner("Building PowerPoint…"):
             build_report_pptx(
                 template_path=TEMPLATE_PATH,
