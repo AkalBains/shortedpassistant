@@ -1,23 +1,6 @@
-from __future__ import annotations
-"""
-Streamlit front-end for the Leadership Report Generator  (Python 3.9 safe)
-------------------------------------------------------------------------
-Guards `st.set_page_config()` so it runs only once, even if some imported
-module makes an st.* call during a hot-reload.
-"""
-
 import streamlit as st
+st.set_page_config(page_title="Leadership Report Generator", layout="wide")
 
-# ----------------------------------------------------------------------
-# Page config – must be first, but guard so it's called only once
-# ----------------------------------------------------------------------
-if not st.session_state.get("_page_config_set"):
-    st.set_page_config(page_title="Leadership Report Generator", layout="wide")
-    st.session_state["_page_config_set"] = True
-
-# ----------------------------------------------------------------------
-# Standard & local imports  (safe after the guard)
-# ----------------------------------------------------------------------
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
