@@ -1,14 +1,22 @@
 from __future__ import annotations
-"""
-Streamlit front‑end for the Leadership Report Generator (Python 3.9‑safe)
+"""app.py – single‑page Streamlit app (Python 3.9)
+------------------------------------------------
+The *first* Streamlit command executed **must** be `st.set_page_config`, so we
+import Streamlit, set the page config, and *then* import everything else.
 """
 
+import streamlit as st
+
+# Page‑level configuration must come before any other st.* call or decorator.
+st.set_page_config(page_title="Leadership Report Generator", layout="wide")
+
+# ---------------------------------------------------------------------------
+# Standard & local imports (safe after set_page_config)
+# ---------------------------------------------------------------------------
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict
-
-import streamlit as st
 
 from openai_api import generate_report
 from trait_scores import aggregate_eight_scores
@@ -16,19 +24,14 @@ from radar_charts import build_radar_charts
 from ppt_builder import build_report_pptx
 
 # ---------------------------------------------------------------------------
-# Page config *must* be set before any other Streamlit command
-# ---------------------------------------------------------------------------
-st.set_page_config(page_title="Leadership Report Generator", layout="wide")
-
-# ---------------------------------------------------------------------------
-# Configuration
+# Configuration & caching
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).parent
 TEMPLATE_PATH = ROOT / "templates" / "Executive_Report_template_v2.pptx"
 
-# Cache the template bytes so multiple users don’t read from disk every run.
 @st.cache_resource(show_spinner=False)
-def _load_template_bytes() -> bytes:  # noqa: D401
+def _load_template_bytes() -> bytes:  # noqa: D401 – keep short description
+    """Cache PPTX bytes so repeated runs don’t hit disk."""
     return TEMPLATE_PATH.read_bytes()
 
 # ---------------------------------------------------------------------------
@@ -49,11 +52,12 @@ TRAIT_24 = [
 # Main app
 # ---------------------------------------------------------------------------
 
-def main() -> None:  # noqa: C901 – top‑level Streamlit logic
+def main() -> None:  # noqa: C901 – Streamlit code can be long
     st.title("📝 Leadership Report Generator")
     st.write(
         "Fill in the form, click *Generate Report*, and download a fully‑formatted PowerPoint.")
 
+    # --------------------  INPUT FORM  --------------------
     with st.form("report_form", clear_on_submit=False):
         st.header("Candidate Basics")
         candidate_name = st.text_input("Candidate Name", max_chars=80)
@@ -77,7 +81,7 @@ def main() -> None:  # noqa: C901 – top‑level Streamlit logic
                 key = f"trait_{trait.replace(' ', '_')}"
                 detailed_ratings[trait] = cols[j].slider(trait.title(), 1, 5, 3, key=key)
 
-        st.header("Reasoning Scores (percentile 1 ‒ 99)")
+        st.header("Reasoning Scores (percentile 1–99)")
         cols2 = st.columns(4)
         reasoning_scores = {
             "verbal": cols2[0].number_input("Verbal", 1, 99, 50, key="verbal"),
@@ -91,27 +95,21 @@ def main() -> None:  # noqa: C901 – top‑level Streamlit logic
     if not submitted:
         st.stop()
 
-    # ------------------------------------------------------------------
-    # Validation
-    # ------------------------------------------------------------------
+    # --------------------  VALIDATION  --------------------
     if not candidate_name or not role_and_company or not raw_notes.strip():
         st.error("Please fill in Candidate Name, Role & Company, and Raw Notes before generating the report.")
         st.stop()
 
-    # ------------------------------------------------------------------
-    # 1. Call GPT
-    # ------------------------------------------------------------------
+    # --------------------  GPT CALL  --------------------
     with st.spinner("Talking to GPT…"):
         try:
             gpt_json = generate_report(raw_notes)
             expanded = json.loads(gpt_json)
-        except Exception as exc:  # noqa: BLE001 – show any JSON or API issue
+        except Exception as exc:  # noqa: BLE001
             st.exception(exc)
             st.stop()
 
-    # ------------------------------------------------------------------
-    # 2. Compute scores & charts
-    # ------------------------------------------------------------------
+    # --------------------  SCORE AGGREGATION & CHARTS  --------------------
     overall_ratings = {
         "Fit for Role": fit_for_role,
         "Capabilities": capabilities,
@@ -124,9 +122,7 @@ def main() -> None:  # noqa: C901 – top‑level Streamlit logic
     with TemporaryDirectory() as tmpdir, st.spinner("Drawing radar charts…"):
         radar1_path, radar2_path = build_radar_charts(detailed_ratings, Path(tmpdir))
 
-        # ------------------------------------------------------------------
-        # 3. Build the PowerPoint
-        # ------------------------------------------------------------------
+        # --------------------  BUILD POWERPOINT  --------------------
         output_path = Path(tmpdir) / f"Executive_Report_{candidate_name.replace(' ', '_')}.pptx"
         with st.spinner("Building PowerPoint…"):
             build_report_pptx(
@@ -147,9 +143,7 @@ def main() -> None:  # noqa: C901 – top‑level Streamlit logic
                 reasoning_scores=reasoning_scores,
             )
 
-        # ------------------------------------------------------------------
-        # 4. Download link
-        # ------------------------------------------------------------------
+        # --------------------  DOWNLOAD LINK  --------------------
         st.success("Done! Click below to download your report.")
         with open(output_path, "rb") as ppt_file:
             st.download_button(
